@@ -1,46 +1,28 @@
 import paho.mqtt.client as mqtt
 import time
-import random
 import json
 import uuid
+import RPi.GPIO as GPIO
+import os
+import glob
 
-# Simulate GPIO for testing on PC
-class GPIO:
-    BCM = 'BCM'
-    OUT = 'OUT'
-    HIGH = 1
-    LOW = 0
-    
-    @staticmethod
-    def setmode(mode):
-        print(f"GPIO.setmode({mode})")
-    
-    @staticmethod
-    def setup(pin, mode):
-        print(f"GPIO.setup({pin}, {mode})")
-    
-    @staticmethod
-    def output(pin, value):
-        print(f"GPIO.output({pin}, {'HIGH' if value else 'LOW'})")
-    
-    @staticmethod
-    def cleanup():
-        print("GPIO.cleanup()")
 
-# GPIO setup
-LED_PIN = 17  # GPIO17 for LED
+LED_PIN = 17 
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(LED_PIN, GPIO.OUT)
 
-# Generate a unique ID for this device
-id = str(uuid.uuid4())  # Using UUID for guaranteed uniqueness
+os.system('modprobe w1-gpio')
+os.system('modprobe w1-therm')
+base_dir = '/sys/bus/w1/devices/'
+device_folder = glob.glob(base_dir + '28*')[0]
+device_file = device_folder + '/w1_slave'
+
+id = str(uuid.uuid4()) 
 client_name = id + '_temperature_client'
 
-# Define MQTT topics
 telemetry_topic = f'{id}/telemetry'
 command_topic = f'{id}/commands'
 
-# Create MQTT client and connect to broker
 mqtt_client = mqtt.Client(client_name)
 mqtt_client.connect('test.mosquitto.org')
 mqtt_client.loop_start()
@@ -50,25 +32,43 @@ print(f"Device ID: {id}")
 print(f"Telemetry topic: {telemetry_topic}")
 print(f"Command topic: {command_topic}")
 
-def simulate_temperature():
-    """Simulate temperature readings between 20-30°C"""
-    return random.uniform(20, 30)
+def read_temp_raw():
+    try:
+        f = open(device_file, 'r')
+        lines = f.readlines()
+        f.close()
+        return lines
+    except Exception as e:
+        print(f"Error reading temperature: {e}")
+        return None
+
+def read_temperature():
+    lines = read_temp_raw()
+    if lines:
+        try:
+            while lines[0].strip()[-3:] != 'YES':
+                time.sleep(0.2)
+                lines = read_temp_raw()
+            equals_pos = lines[1].find('t=')
+            if equals_pos != -1:
+                temp_string = lines[1][equals_pos+2:]
+                temp_c = float(temp_string) / 1000.0
+                return temp_c
+        except Exception as e:
+            print(f"Error processing temperature: {e}")
+    return None
 
 def on_publish(client, userdata, mid):
-    """Callback function that is called when a message is successfully published"""
     print(f"Message {mid} published successfully")
 
 def handle_command(client, userdata, message):
-    """Handle incoming command messages and control LED"""
     try:
         command = json.loads(message.payload.decode())
         print(f"Command received: {command}")
         
-        # Process the LED command
         led_on = command.get('led_on', False)
         print(f"LED state: {'ON' if led_on else 'OFF'}")
         
-        # Control the LED (simulated)
         GPIO.output(LED_PIN, GPIO.HIGH if led_on else GPIO.LOW)
         
     except json.JSONDecodeError:
@@ -77,43 +77,37 @@ def handle_command(client, userdata, message):
         print(f"Error processing command: {e}")
 
 def cleanup():
-    """Cleanup GPIO settings"""
     GPIO.output(LED_PIN, GPIO.LOW)
     GPIO.cleanup()
 
 def main():
     try:
-        # Set up the publish callback
         mqtt_client.on_publish = on_publish
         
-        # Subscribe to command topic
         mqtt_client.subscribe(command_topic)
         mqtt_client.on_message = handle_command
         
-        # Initial LED state
         GPIO.output(LED_PIN, GPIO.LOW)
         
         while True:
-            # Simulate temperature reading
-            temperature = simulate_temperature()
+            temperature = read_temperature()
             
-            # Create telemetry data
-            telemetry = {
-                'temperature': temperature,
-                'timestamp': time.time(),
-                'device_id': id
-            }
+            if temperature is not None:
+                telemetry = {
+                    'temperature': temperature,
+                    'timestamp': time.time(),
+                    'device_id': id
+                }
+                
+                message = json.dumps(telemetry)
+                result = mqtt_client.publish(telemetry_topic, message)
+                
+                result.wait_for_publish()
+                
+                print(f"Published temperature: {temperature:.1f}°C")
+            else:
+                print("Failed to read temperature")
             
-            # Convert to JSON and publish
-            message = json.dumps(telemetry)
-            result = mqtt_client.publish(telemetry_topic, message)
-            
-            # Wait for the message to be published
-            result.wait_for_publish()
-            
-            print(f"Published temperature: {temperature:.1f}°C")
-            
-            # Wait for 3 seconds before next reading
             time.sleep(3)
             
     except KeyboardInterrupt:

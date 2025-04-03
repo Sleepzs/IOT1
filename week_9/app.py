@@ -3,15 +3,12 @@ import time
 import paho.mqtt.client as mqtt
 import uuid
 
-# Generate a unique ID for this server
 id = str(uuid.uuid4())
 client_name = id + '_temperature_server'
 
-# Define MQTT topics
 telemetry_topic = f'{id}/telemetry'
 command_topic = f'{id}/commands'
 
-# Create MQTT client and connect to broker
 mqtt_client = mqtt.Client(client_name)
 mqtt_client.connect('test.mosquitto.org')
 mqtt_client.loop_start()
@@ -22,17 +19,14 @@ print(f"Listening to topic: {telemetry_topic}")
 print(f"Sending commands to topic: {command_topic}")
 
 def handle_telemetry(client, userdata, message):
-    """Handle incoming telemetry messages and send appropriate commands"""
     try:
         payload = json.loads(message.payload.decode())
         print(f"Message received: {payload}")
         
-        # Process the temperature data
         temperature = payload.get('temperature')
         if temperature is not None:
             print(f"Temperature: {temperature:.1f}°C")
             
-            # Send command based on temperature
             command = {
                 'led_on': temperature > 25
             }
@@ -48,13 +42,11 @@ def handle_telemetry(client, userdata, message):
 
 def main():
     try:
-        # Subscribe to telemetry topic
         mqtt_client.subscribe(telemetry_topic)
         mqtt_client.on_message = handle_telemetry
         
         print("Server is running. Press Ctrl+C to exit.")
         
-        # Keep the server running
         while True:
             time.sleep(1)
             
