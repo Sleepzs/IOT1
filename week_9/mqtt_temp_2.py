@@ -10,6 +10,7 @@ client_name = id + '_temperature_client'
 
 # Define MQTT topics
 telemetry_topic = f'{id}/telemetry'
+command_topic = f'{id}/commands'
 
 # Create MQTT client and connect to broker
 mqtt_client = mqtt.Client(client_name)
@@ -19,6 +20,7 @@ mqtt_client.loop_start()
 print(f"MQTT connected! Client name: {client_name}")
 print(f"Device ID: {id}")
 print(f"Telemetry topic: {telemetry_topic}")
+print(f"Command topic: {command_topic}")
 
 def simulate_temperature():
     """Simulate temperature readings between 20-30°C"""
@@ -28,10 +30,29 @@ def on_publish(client, userdata, mid):
     """Callback function that is called when a message is successfully published"""
     print(f"Message {mid} published successfully")
 
+def handle_command(client, userdata, message):
+    """Handle incoming command messages"""
+    try:
+        command = json.loads(message.payload.decode())
+        print(f"Command received: {command}")
+        
+        # Process the LED command
+        led_on = command.get('led_on', False)
+        print(f"LED state: {'ON' if led_on else 'OFF'}")
+        
+    except json.JSONDecodeError:
+        print("Error: Received invalid JSON command")
+    except Exception as e:
+        print(f"Error processing command: {e}")
+
 def main():
     try:
         # Set up the publish callback
         mqtt_client.on_publish = on_publish
+        
+        # Subscribe to command topic
+        mqtt_client.subscribe(command_topic)
+        mqtt_client.on_message = handle_command
         
         while True:
             # Simulate temperature reading
