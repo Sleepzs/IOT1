@@ -2,20 +2,44 @@ import json
 import time
 import paho.mqtt.client as mqtt
 
-id = '<YOUR_UNIQUE_ID>'  
+# Use the same ID as in mqtt_temp.py
+id = 'test_device_001'
 client_telemetry_topic = id + '/telemetry'
-client_name = id + 'temperature_server'
+client_name = id + '_temperature_server'
 
+# Create MQTT client
 mqtt_client = mqtt.Client(client_name)
 mqtt_client.connect('test.mosquitto.org')
 mqtt_client.loop_start()
 
-def handle_telemetry(client, userdata, message):
-    payload = json.loads(message.payload.decode())
-    print("Message received:", payload)
+print(f"Server started! Listening for messages from {client_telemetry_topic}")
 
+def handle_telemetry(client, userdata, message):
+    try:
+        payload = json.loads(message.payload.decode())
+        print(f"Temperature received: {payload['temperature']:.1f}°C")
+        
+        # Send command based on temperature
+        command = {'led_on': payload['temperature'] > 25}
+        print(f"Sending command: {command}")
+        client.publish(id + '/commands', json.dumps(command))
+        
+    except Exception as e:
+        print(f"Error handling telemetry: {e}")
+
+# Subscribe to telemetry topic
 mqtt_client.subscribe(client_telemetry_topic)
 mqtt_client.on_message = handle_telemetry
 
-while True:
-    time.sleep(2)
+try:
+    while True:
+        time.sleep(2)
+        
+except KeyboardInterrupt:
+    print("\nShutting down server...")
+    mqtt_client.loop_stop()
+    mqtt_client.disconnect()
+except Exception as e:
+    print(f"An error occurred: {e}")
+    mqtt_client.loop_stop()
+    mqtt_client.disconnect()
