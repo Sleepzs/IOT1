@@ -1,0 +1,60 @@
+import json
+import time
+import paho.mqtt.client as mqtt
+import uuid
+
+# Generate a unique ID for this server
+id = str(uuid.uuid4())
+client_name = id + '_temperature_server'
+
+# Define MQTT topics
+telemetry_topic = f'{id}/telemetry'
+
+# Create MQTT client and connect to broker
+mqtt_client = mqtt.Client(client_name)
+mqtt_client.connect('test.mosquitto.org')
+mqtt_client.loop_start()
+
+print(f"MQTT Server connected! Client name: {client_name}")
+print(f"Server ID: {id}")
+print(f"Listening to topic: {telemetry_topic}")
+
+def handle_telemetry(client, userdata, message):
+    """Handle incoming telemetry messages"""
+    try:
+        payload = json.loads(message.payload.decode())
+        print(f"Message received: {payload}")
+        
+        # Process the temperature data
+        temperature = payload.get('temperature')
+        if temperature is not None:
+            print(f"Temperature: {temperature:.1f}°C")
+            
+    except json.JSONDecodeError:
+        print("Error: Received invalid JSON data")
+    except Exception as e:
+        print(f"Error processing message: {e}")
+
+def main():
+    try:
+        # Subscribe to telemetry topic
+        mqtt_client.subscribe(telemetry_topic)
+        mqtt_client.on_message = handle_telemetry
+        
+        print("Server is running. Press Ctrl+C to exit.")
+        
+        # Keep the server running
+        while True:
+            time.sleep(1)
+            
+    except KeyboardInterrupt:
+        print("\nShutting down server...")
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+
+if __name__ == "__main__":
+    main() 
